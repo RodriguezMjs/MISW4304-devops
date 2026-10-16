@@ -64,7 +64,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 
 pytest                         # pruebas (no requieren base de datos)
-python application.py          # http://localhost:5000
+python application.py          # http://localhost:8000
 flask --app application generate-token   # token para Postman
 ```
 
