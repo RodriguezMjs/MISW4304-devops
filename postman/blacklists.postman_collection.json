@@ -1,0 +1,353 @@
+{
+  "info": {
+    "name": "Blacklist API - MISW4304",
+    "description": "Microservicio de lista negra global de emails.\n\nTodos los endpoints de `/blacklists` requieren un token Bearer estático (variable `token` del environment). Generarlo con `flask --app application generate-token` usando el mismo `JWT_SECRET_KEY` configurado en Beanstalk.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('test_email')) {",
+          "    pm.collectionVariables.set('test_email', `test.${Date.now()}@example.com`);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [{ "key": "test_email", "value": "" }],
+  "item": [
+    {
+      "name": "Health check",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/ping", "host": ["{{base_url}}"], "path": ["ping"] },
+        "description": "Endpoint usado por el health check de Beanstalk. No requiere token."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('status ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST /blacklists",
+      "item": [
+        {
+          "name": "Agregar email a la lista negra",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.collectionVariables.set('test_email', `test.${Date.now()}@example.com`);"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Retorna el email registrado', () => {",
+                  "    pm.expect(pm.response.json().blacklist.email).to.eql(pm.collectionVariables.get('test_email'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"app_uuid\": \"{{$guid}}\",\n  \"blocked_reason\": \"Envío de spam\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/blacklists", "host": ["{{base_url}}"], "path": ["blacklists"] },
+            "description": "Agrega un email a la lista negra global.\n\n| Campo | Tipo | Obligatorio |\n|---|---|---|\n| email | String (email) | Sí |\n| app_uuid | String (UUID) | Sí |\n| blocked_reason | String (máx. 255) | No |\n\nEl servicio guarda internamente la IP de origen y la fecha/hora de la solicitud."
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"spam@example.com\",\n  \"app_uuid\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n  \"blocked_reason\": \"Envío de spam\"\n}"
+                },
+                "url": { "raw": "{{base_url}}/blacklists", "host": ["{{base_url}}"], "path": ["blacklists"] }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"msg\": \"El email spam@example.com fue agregado a la lista negra global\",\n  \"blacklist\": {\n    \"id\": 1,\n    \"email\": \"spam@example.com\",\n    \"app_uuid\": \"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\n    \"blocked_reason\": \"Envío de spam\",\n    \"ip_address\": \"181.50.1.1\",\n    \"created_at\": \"2026-10-15T00:48:16.361730\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Email duplicado (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 409', () => pm.response.to.have.status(409));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"app_uuid\": \"{{$guid}}\",\n  \"blocked_reason\": \"Duplicado\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/blacklists", "host": ["{{base_url}}"], "path": ["blacklists"] },
+            "description": "Intentar agregar un email que ya existe retorna 409."
+          },
+          "response": [
+            {
+              "name": "409 Conflict",
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"msg\": \"El email spam@example.com ya está en la lista negra global\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Email inválido (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Reporta error en email', () => pm.expect(pm.response.json().errors).to.have.property('email'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"no-es-un-email\",\n  \"app_uuid\": \"{{$guid}}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/blacklists", "host": ["{{base_url}}"], "path": ["blacklists"] }
+          },
+          "response": [
+            {
+              "name": "400 Bad Request",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"msg\": \"Datos inválidos\",\n  \"errors\": {\n    \"email\": [\"Not a valid email address.\"]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "app_uuid inválido (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Reporta error en app_uuid', () => pm.expect(pm.response.json().errors).to.have.property('app_uuid'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"otro@example.com\",\n  \"app_uuid\": \"123\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/blacklists", "host": ["{{base_url}}"], "path": ["blacklists"] }
+          }
+        },
+        {
+          "name": "Motivo mayor a 255 caracteres (400)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.variables.set('long_reason', 'x'.repeat(256));"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Reporta error en blocked_reason', () => pm.expect(pm.response.json().errors).to.have.property('blocked_reason'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"otro@example.com\",\n  \"app_uuid\": \"{{$guid}}\",\n  \"blocked_reason\": \"{{long_reason}}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/blacklists", "host": ["{{base_url}}"], "path": ["blacklists"] }
+          }
+        },
+        {
+          "name": "Sin token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 401', () => pm.response.to.have.status(401));"]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"otro@example.com\",\n  \"app_uuid\": \"{{$guid}}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/blacklists", "host": ["{{base_url}}"], "path": ["blacklists"] }
+          },
+          "response": [
+            {
+              "name": "401 Unauthorized",
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"msg\": \"Missing Authorization Header\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "GET /blacklists/<email>",
+      "item": [
+        {
+          "name": "Email en la lista negra",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is_blacklisted = true', () => pm.expect(pm.response.json().is_blacklisted).to.be.true);",
+                  "pm.test('Retorna el motivo', () => pm.expect(pm.response.json().blocked_reason).to.eql('Envío de spam'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/blacklists/{{test_email}}",
+              "host": ["{{base_url}}"],
+              "path": ["blacklists", "{{test_email}}"]
+            },
+            "description": "Indica si el email está en la lista negra global y el motivo por el que fue agregado."
+          },
+          "response": [
+            {
+              "name": "200 En lista negra",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"email\": \"spam@example.com\",\n  \"is_blacklisted\": true,\n  \"blocked_reason\": \"Envío de spam\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Email que no está en la lista negra",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is_blacklisted = false', () => pm.expect(pm.response.json().is_blacklisted).to.be.false);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/blacklists/no.existe.{{$timestamp}}@example.com",
+              "host": ["{{base_url}}"],
+              "path": ["blacklists", "no.existe.{{$timestamp}}@example.com"]
+            }
+          },
+          "response": [
+            {
+              "name": "200 No está en lista negra",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"email\": \"limpio@example.com\",\n  \"is_blacklisted\": false,\n  \"blocked_reason\": null\n}"
+            }
+          ]
+        },
+        {
+          "name": "Sin token (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 401', () => pm.response.to.have.status(401));"]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/blacklists/{{test_email}}",
+              "host": ["{{base_url}}"],
+              "path": ["blacklists", "{{test_email}}"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
