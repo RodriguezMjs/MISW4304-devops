@@ -125,7 +125,5 @@ En el environment, reemplaza `[TOKEN_ESTATICO]` por el token. `test_email` y `ap
 Correr la colección desde la terminal:
 
 ```bash
-npx newman run postman/blacklists.postman_collection.json \
-  --env-var base_url=http://<tu-ambiente>.elasticbeanstalk.com \
-  --env-var token=<token>
+npx newman run postman/blacklists.postman_collection.json   -e postman/blacklists-aws.postman_environment.json   --env-var base_url=http://<tu-ambiente>.elasticbeanstalk.com   --env-var token=<token>
 ```
