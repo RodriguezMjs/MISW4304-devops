@@ -114,6 +114,8 @@ Las tablas se crean automáticamente al arrancar (`db.create_all()`).
 
 ## Postman
 
+Documentación publicada de la API: https://documenter.getpostman.com/view/14556408/2sBYHSxLjW#blacklist-api-misw4304
+
 | Archivo | Uso |
 |---|---|
 | `postman/blacklists.postman_collection.json` | Colección con 12 escenarios, tests y ejemplos para la documentación |
