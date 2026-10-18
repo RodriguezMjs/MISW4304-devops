@@ -114,12 +114,18 @@ Las tablas se crean automáticamente al arrancar (`db.create_all()`).
 
 ## Postman
 
-Importa `postman/blacklists.postman_collection.json` y `postman/blacklists.postman_environment.json`, y ajusta `base_url` (URL del ambiente de Beanstalk) y `token`.
+Documentación publicada de la API: https://documenter.getpostman.com/view/14556408/2sBYHSxLjW#blacklist-api-misw4304
+
+| Archivo | Uso |
+|---|---|
+| `postman/blacklists.postman_collection.json` | Colección con 12 escenarios, tests y ejemplos para la documentación |
+| `postman/blacklists.postman_environment.json` | Environment local (`http://localhost:8000`) |
+| `postman/blacklists-aws.postman_environment.json` | Environment de AWS (ajusta `base_url` a la URL del ambiente de Beanstalk) |
+
+En el environment, reemplaza `[TOKEN_ESTATICO]` por el token. `test_email` y `app_uuid` se generan solos en cada corrida. Ejecuta la colección completa y en orden: el detalle de cada escenario está en la descripción de la colección.
 
 Correr la colección desde la terminal:
 
 ```bash
-npx newman run postman/blacklists.postman_collection.json \
-  --env-var base_url=http://<tu-ambiente>.elasticbeanstalk.com \
-  --env-var token=<token>
+npx newman run postman/blacklists.postman_collection.json   -e postman/blacklists-aws.postman_environment.json   --env-var base_url=http://<tu-ambiente>.elasticbeanstalk.com   --env-var token=<token>
 ```
