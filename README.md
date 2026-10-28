@@ -1,6 +1,6 @@
 # MISW4304-devops — Microservicio de lista negra global
 
-Microservicio en Flask para la Entrega 1 (despliegue manual en AWS Elastic Beanstalk + RDS PostgreSQL).
+Microservicio en Flask con despliegue manual en AWS Elastic Beanstalk + RDS PostgreSQL y pruebas unitarias para integración continua.
 
 ## Endpoints
 
@@ -49,7 +49,10 @@ app/
     resources.py            # Endpoints HTTP (Flask-RESTful), delegan en services
   health/
     resources.py            # GET /ping
-tests/                      # Pruebas con pytest (API y servicios)
+tests/
+  conftest.py               # Fixtures compartidas: app, cliente, token y contexto
+  test_blacklist_api.py     # Pruebas HTTP con servicios simulados
+  test_blacklist_services.py # Pruebas de negocio con consultas y sesión simuladas
 postman/                    # Colección y environment de Postman
 .ebextensions/              # Health check en /ping
 .ebignore                   # Lo que no se sube al zip de Beanstalk
@@ -57,13 +60,15 @@ postman/                    # Colección y environment de Postman
 
 ## Desarrollo local
 
+Entorno de pruebas verificado con Python 3.12.
+
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-dev.txt
+python -m pip install -r requirements-dev.txt
 cp .env.example .env
 
-pytest                         # pruebas (no requieren base de datos)
+python -m pytest -v             # pruebas (no requieren base de datos)
 python application.py          # http://localhost:8000
 flask --app application generate-token   # token para Postman
 ```
@@ -75,13 +80,56 @@ docker run -d --name blacklist-db -p 5432:5432 \
   -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=blacklist postgres:16
 ```
 
-Las pruebas mockean la capa de servicio y la sesión de SQLAlchemy, así que corren sin base de datos. La integración real con PostgreSQL se valida con la colección de Postman contra el ambiente desplegado.
+## Pruebas automatizadas
+
+Después de instalar `requirements-dev.txt` y activar el entorno virtual:
+
+```bash
+python -m pytest -v                         # suite completa
+python -m pytest -v tests/test_blacklist_api.py -k post  # escenarios del POST
+python -m pytest -v tests/test_blacklist_services.py     # lógica de negocio
+python -m pytest --junitxml=reports/pytest.xml            # reporte para CI
+```
+
+Ejecuta los comandos desde la raíz del repositorio. Para correr únicamente las pruebas no necesitas un archivo `.env`, PostgreSQL, credenciales de AWS ni un token externo. Pytest devuelve un código de salida distinto de cero si una prueba falla; el proceso de integración continua debe conservar ese resultado.
+
+### Configuración y aislamiento
+
+`tests/conftest.py` proporciona fixtures con alcance por prueba:
+
+| Fixture | Propósito |
+|---|---|
+| `app` | Crea la aplicación con `TestConfig`, `TESTING=True` y creación de tablas desactivada |
+| `client` | Cliente HTTP de Flask para realizar solicitudes sin levantar un servidor |
+| `token` | JWT generado con el secreto exclusivo de pruebas |
+| `auth` | Encabezado `Authorization: Bearer <token>` |
+| `app_context` | Contexto de aplicación para las pruebas que usan Flask-SQLAlchemy |
+
+El aislamiento se realiza con mocks de `unittest.mock`: las pruebas HTTP reemplazan las funciones de servicio donde las usa `app.blacklist.resources`; las pruebas de negocio reemplazan las consultas del modelo y la sesión de SQLAlchemy. `TestConfig` contiene una URI de PostgreSQL de prueba que selecciona explícitamente el driver `psycopg2` instalado por el proyecto, pero estas pruebas no abren conexiones ni crean tablas. Las nuevas pruebas deben mantener ese aislamiento y simular cualquier acceso a persistencia.
+
+Este enfoque permite ejecutar la suite localmente y en CI sin un servidor de base de datos. Comprueba la validación, autenticación, respuestas HTTP y lógica de negocio; la persistencia real y las restricciones de PostgreSQL se verifican por separado mediante la colección de Postman contra el ambiente desplegado.
+
+### Escenarios del POST `/blacklists`
+
+| Escenario | Resultado esperado |
+|---|---|
+| Solicitud válida con token | `201`, email serializado y envío de la IP de origen al servicio |
+| Email ya registrado | `409` con mensaje de duplicado |
+| UUID inválido | `400` con error en `app_uuid` |
+| Email mal formado | `400` con error en `email` |
+| Motivo de 256 caracteres | `400` con error en `blocked_reason` |
+| Solicitud sin token | `401`, sin invocar el servicio |
+| Motivo omitido | `201`, motivo enviado como `None` |
+| Motivo de exactamente 255 caracteres | `201` |
+| Campos obligatorios ausentes | `400` con los campos correspondientes |
+
+La suite también incluye consultas GET, health check y pruebas de normalización y almacenamiento mediante mocks. Los casos de validación tienen identificadores descriptivos para facilitar la lectura de los resultados en la terminal y en los reportes de CI.
 
 ## Token de autorización
 
 El enunciado permite un token estático. Es un JWT sin expiración firmado con `JWT_SECRET_KEY`:
 
-1. Define un `JWT_SECRET_KEY` largo (≥ 32 caracteres) y compártelo por un canal privado del equipo, **no en el repo**.
+1. Define un `JWT_SECRET_KEY` largo (≥ 32 caracteres).
 2. Genera el token con ese mismo secreto: `JWT_SECRET_KEY=... flask --app application generate-token`.
 3. Usa ese token en Postman (variable `token`) y en `Authorization: Bearer <token>`.
 
@@ -99,6 +147,8 @@ Variables de entorno del ambiente (Configuración → Actualizaciones, monitoreo
 | `DATABASE_URL` | `postgresql://<usuario>:<clave>@<endpoint-rds>:5432/<db>` |
 
 Si la base de RDS se crea **asociada** al ambiente de Beanstalk, no hace falta `DATABASE_URL`: la app usa las variables `RDS_HOSTNAME`, `RDS_PORT`, `RDS_DB_NAME`, `RDS_USERNAME` y `RDS_PASSWORD` que Beanstalk inyecta. Para las pruebas de estrategias de despliegue es preferible una RDS **independiente**, así no se recrea con el ambiente.
+
+Las URI con esquema `postgres://` o `postgresql://` se normalizan a `postgresql+psycopg2://` para usar el driver instalado por el proyecto. La configuración mediante `RDS_*` también selecciona `psycopg2`. Las URI que ya indican un driver se conservan; ese driver debe estar instalado en el ambiente.
 
 El security group de RDS debe permitir el puerto 5432 desde el security group de las instancias de Beanstalk.
 
