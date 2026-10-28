@@ -5,25 +5,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app import create_app
 from app.blacklist.models import Blacklist
 from app.blacklist.services import (
     EmailAlreadyBlacklisted,
     add_to_blacklist,
     find_blacklisted,
 )
-from app.config import TestConfig
-
-
-@pytest.fixture(autouse=True)
-def app_context():
-    """Flask-SQLAlchemy exige un app context para acceder a Blacklist.query."""
-    with create_app(TestConfig).app_context():
-        yield
 
 
 @pytest.fixture
-def query():
+def query(app_context):
     """Reemplaza Blacklist.query; query.filter_by(...).first() retorna None por defecto."""
     mock = MagicMock()
     mock.filter_by.return_value.first.return_value = None
