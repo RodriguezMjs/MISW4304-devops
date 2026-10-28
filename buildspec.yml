@@ -26,4 +26,7 @@ phases:
 
 artifacts:
   files:
-    - '**/*'
+    - application.py
+    - requirements.txt
+    - 'app/**/*'
+    - '.ebextensions/**/*'
