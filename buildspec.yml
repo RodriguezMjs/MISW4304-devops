@@ -29,12 +29,6 @@ reports:
     base-directory: reports
     file-format: JUNITXML
 
-  coverage-results:
-    files:
-      - coverage.xml
-    base-directory: reports
-    file-format: COBERTURExML
-
 artifacts:
   files:
     - application.py
