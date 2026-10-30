@@ -6,8 +6,6 @@ phases:
     runtime-versions:
       python: 3.13
     commands:
-      - python -m pip install --upgrade pip
-      - python -m pip install -r requirements.txt
       - python -m pip install -r requirements-dev.txt
 
   pre_build:
@@ -17,12 +15,25 @@ phases:
 
   build:
     commands:
-      - echo "Ejecutando pruebas unitarias..."
-      - python -m pytest -v
+      - echo "Ejecutando pruebas y calculando cobertura..."
+      - python -m pytest -v --junitxml=reports/junit.xml --cov=app --cov-report=xml:reports/coverage.xml --cov-report=term-missing
 
   post_build:
     commands:
-      - echo "Pruebas finalizadas."
+      - echo "Proceso de pruebas finalizado."
+
+reports:
+  pytest-results:
+    files:
+      - junit.xml
+    base-directory: reports
+    file-format: JUNITXML
+
+  coverage-results:
+    files:
+      - coverage.xml
+    base-directory: reports
+    file-format: COBERTURExML
 
 artifacts:
   files:
@@ -30,3 +41,4 @@ artifacts:
     - requirements.txt
     - 'app/**/*'
     - '.ebextensions/**/*'
+  discard-paths: no
