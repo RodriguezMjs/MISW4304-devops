@@ -1,0 +1,44 @@
+
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.13
+    commands:
+      - python -m pip install -r requirements-dev.txt
+
+  pre_build:
+    commands:
+      - echo "Verificando entorno de pruebas..."
+      - python --version
+
+  build:
+    commands:
+      - echo "Ejecutando pruebas y calculando cobertura..."
+      - python -m pytest -v --junitxml=reports/junit.xml --cov=app --cov-report=xml:reports/coverage.xml --cov-report=term-missing
+
+  post_build:
+    commands:
+      - echo "Proceso de pruebas finalizado."
+
+reports:
+  pytest-results:
+    files:
+      - junit.xml
+    base-directory: reports
+    file-format: JUNITXML
+
+  coverage-results:
+    files:
+      - coverage.xml
+    base-directory: reports
+    file-format: COBERTURExML
+
+artifacts:
+  files:
+    - application.py
+    - requirements.txt
+    - 'app/**/*'
+    - '.ebextensions/**/*'
+  discard-paths: no
