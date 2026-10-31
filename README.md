@@ -178,4 +178,4 @@ Correr la colección desde la terminal:
 
 ```bash
 npx newman run postman/blacklists.postman_collection.json   -e postman/blacklists-aws.postman_environment.json   --env-var base_url=http://<tu-ambiente>.elasticbeanstalk.com   --env-var token=<token>
-```
+``` 
