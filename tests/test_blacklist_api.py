@@ -37,7 +37,7 @@ def _entry(**overrides):
 
 def test_ping_no_requiere_token(client):
     resp = client.get("/ping")
-    assert resp.status_code == 201
+    assert resp.status_code == 200
     assert resp.get_json() == {"status": "ok"}
 
 
