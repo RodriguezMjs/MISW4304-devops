@@ -51,5 +51,5 @@ reports:
 
 artifacts:
   files:
-    - imageDetail.json
+    - '**/*'
   discard-paths: yes
