@@ -1,6 +1,111 @@
 # MISW4304-devops — Microservicio de lista negra global
 
-Microservicio en Flask con despliegue manual en AWS Elastic Beanstalk + RDS PostgreSQL y pruebas unitarias para integración continua.
+Microservicio en Flask con RDS PostgreSQL, pruebas unitarias para integración continua y despliegues manuales en Elastic Beanstalk (entregas anteriores) y AWS Fargate (entrega 3).
+
+## Despliegue en AWS Fargate (entrega 3)
+
+Validación funcional del 12 de noviembre de 2026: `/ping` responde
+`200` con `{"status":"ok"}` y todas las pruebas de la colección de Postman
+aprobaron contra el ALB. El ambiente utiliza un servicio ECS sobre Fargate,
+una imagen privada en ECR y PostgreSQL en RDS.
+
+### Recursos del ambiente
+
+| Recurso | Valor |
+|---|---|
+| Región | Ohio (`us-east-2`) |
+| Cuenta AWS | `955501536413` |
+| URL base | `http://blacklist-alb-1700016469.us-east-2.elb.amazonaws.com` |
+| Clúster ECS | `blacklist-cluster` |
+| Servicio ECS | `blacklist-service` |
+| Controlador de despliegue | `CODE_DEPLOY` |
+| Tareas deseadas | `1` |
+| Definición de tarea inicial | `arn:aws:ecs:us-east-2:955501536413:task-definition/blacklist-task:1` |
+| Plataforma | Fargate, Linux/X86_64, red `awsvpc` |
+| Recursos de tarea | 256 unidades de CPU (0.25 vCPU), 512 MiB |
+| Contenedor / puerto | `blacklist-api` / TCP `8000` (HTTP) |
+| Repositorio ECR privado | `955501536413.dkr.ecr.us-east-2.amazonaws.com/blacklist-api` |
+| Etiqueta inicial | `manual-9ed93840d3f1` |
+| Digest de imagen | `sha256:9ed93840d3f120fce0a4b2dcbfbe511f499af8ed9fab6afc27270d9a4d1cd88c` |
+| Balanceador | `blacklist-alb`, público, IPv4 |
+| Listener productivo | HTTP `80`, inicialmente hacia `blacklist-blue` al 100 % |
+| Target groups | `blacklist-blue` y `blacklist-green`, tipo IP, HTTP `8000` |
+| ARN target group azul | `arn:aws:elasticloadbalancing:us-east-2:955501536413:targetgroup/blacklist-blue/d9bb0c5a11164225` |
+| Health check del ALB | HTTP `/ping`, puerto de tráfico, éxito `200` |
+| Periodo de gracia del servicio | `60` segundos |
+| Rol de ejecución | `ecsTaskExecutionRole` |
+| Rol de tarea | Sin rol de aplicación |
+| Logs CloudWatch | `/ecs/blacklist-task`, región `us-east-2`, prefijo `ecs` |
+
+### Red y base de datos
+
+| Recurso | Configuración |
+|---|---|
+| VPC | `vpc-0dff2d1e5ebc79bbb` |
+| Subred us-east-2a | `subnet-02869fc23f7919d86` |
+| Subred us-east-2b | `subnet-048c9254e66bcc53c` |
+| IP pública de tareas | Activada para salida a ECR, Secrets Manager y CloudWatch desde las subredes públicas |
+| SG del ALB | `blacklist-alb-sg` / `sg-0f22e6568d5511396`: entrada TCP `80` desde `0.0.0.0/0` |
+| SG de tareas | `blacklist-tasks-sg` / `sg-056c624822e8555d5`: entrada TCP `8000` solo desde el SG del ALB |
+| Instancia RDS | `blacklist-db`, PostgreSQL, acceso público desactivado |
+| Base / puerto | `blacklist` / `5432` |
+| Endpoint RDS | `blacklist-db.croguoka4iq3.us-east-2.rds.amazonaws.com` |
+| SG de RDS | `blacklist-rds-sg` / `sg-0e104a2c8361a157e`: entrada PostgreSQL desde el SG de tareas y la regla existente de Beanstalk |
+
+RDS se reutiliza del ambiente anterior. La consulta de configuración de Beanstalk
+confirmó `HasCoupledDatabase=false`: la instancia no está acoplada al ciclo de
+vida de ese entorno. Se mantiene el acceso de Beanstalk a la base de datos.
+ALB y tareas usan las dos subredes indicadas; la conexión a RDS utiliza su endpoint
+privado. En Fargate se usa `PROXY_COUNT=1` porque solo hay un ALB delante de Gunicorn.
+
+### Variables y secretos de ECS
+
+| Variable | Tipo | Valor o referencia |
+|---|---|---|
+| `PROXY_COUNT` | Valor | `1` |
+| `DATABASE_URL` | ValueFrom | `arn:aws:secretsmanager:us-east-2:955501536413:secret:blacklist/entrega3/database-url-oyIDnV` |
+| `JWT_SECRET_KEY` | ValueFrom | `arn:aws:secretsmanager:us-east-2:955501536413:secret:blacklist/entrega3/jwt-secret-LMmfZ8` |
+
+Cada secreto contiene una cadena de **texto sin formato**, sin JSON ni comillas
+externas. `DATABASE_URL` contiene la URI completa con `sslmode=require` y
+`JWT_SECRET_KEY` contiene la clave de firma. El rol `ecsTaskExecutionRole` tiene
+la política insertada `blacklist-entrega3-read-secrets`, con
+`secretsmanager:GetSecretValue` sobre esos dos ARN. ECS obtiene los valores al
+iniciar cada tarea; los cambios de secretos requieren tareas nuevas para aplicarse.
+El repositorio documenta las referencias a los secretos; sus valores y los tokens
+de acceso se administran fuera del código fuente.
+
+### Validación funcional
+
+Para Postman, asignar la URL del ALB a `base_url` y un JWT firmado con el secreto
+de Fargate a `token`. Esta variable contiene el JWT, sin el prefijo `Bearer`;
+Authorization usa Bearer Token con `{{token}}`. El secreto de firma no es el token.
+
+```bash
+curl --fail --max-time 15 http://blacklist-alb-1700016469.us-east-2.elb.amazonaws.com/ping
+```
+
+La verificación del despliegue comprende el estado RUNNING de la tarea, un destino
+Healthy en `blacklist-blue`, la respuesta del endpoint de salud y la ejecución
+de la colección de Postman contra la URL del ALB. El health check no requiere
+autenticación; las operaciones de lista negra requieren un JWT válido.
+
+### Estado de la integración con CI/CD
+
+El servicio está configurado con el controlador `CODE_DEPLOY` y dispone de los
+grupos de destino `blacklist-blue` y `blacklist-green` para despliegues blue/green.
+El listener productivo HTTP:80 dirige inicialmente el tráfico al grupo azul;
+no hay un listener de prueba configurado.
+
+Al 12 de noviembre de 2026, el despliegue manual y la validación funcional están
+completados. La aplicación y el grupo de despliegue de CodeDeploy, la construcción
+y publicación automatizadas de imágenes y su conexión en CodePipeline están
+pendientes de configuración. Los escenarios de CI fallido, CI/CD exitosos y CI
+exitoso con CD fallido aún no se han validado en este ambiente.
+
+La imagen inicial usa una etiqueta manual basada en su identificador de imagen.
+La publicación automatizada debe utilizar etiquetas únicas asociadas al commit
+para mantener la trazabilidad de las versiones.
 
 ## Endpoints
 
@@ -8,7 +113,7 @@ Microservicio en Flask con despliegue manual en AWS Elastic Beanstalk + RDS Post
 |---|---|---|---|
 | `POST` | `/blacklists` | Bearer | Agrega un email a la lista negra global |
 | `GET` | `/blacklists/<email>` | Bearer | Indica si el email está en la lista negra y el motivo |
-| `GET` | `/ping` | — | Health check para Beanstalk |
+| `GET` | `/ping` | — | Health check para Beanstalk y Fargate |
 
 **POST /blacklists** — body JSON:
 
@@ -178,4 +283,4 @@ Correr la colección desde la terminal:
 
 ```bash
 npx newman run postman/blacklists.postman_collection.json   -e postman/blacklists-aws.postman_environment.json   --env-var base_url=http://<tu-ambiente>.elasticbeanstalk.com   --env-var token=<token>
-``` 
+```
