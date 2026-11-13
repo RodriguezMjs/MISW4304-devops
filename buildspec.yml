@@ -1,6 +1,11 @@
 
 version: 0.2
 
+env:
+  variables:
+    IMAGE_REPO_NAME: "blacklist-api"
+    AWS_DEFAULT_REGION: "us-east-2"
+
 phases:
   install:
     runtime-versions:
@@ -12,15 +17,30 @@ phases:
     commands:
       - echo "Verificando entorno de pruebas..."
       - python --version
+      - docker --version
+      - echo "Configurando Amazon ECR..."
+      - AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - REPOSITORY_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}"
+      - IMAGE_TAG=$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c 1-7)
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
 
   build:
     commands:
       - echo "Ejecutando pruebas y calculando cobertura..."
       - python -m pytest -v --junitxml=reports/junit.xml --cov=app --cov-report=xml:reports/coverage.xml --cov-report=term-missing
+      - echo "Construyendo imagen Docker..."
+      - docker build -t "$REPOSITORY_URI:$IMAGE_TAG" .
 
   post_build:
     commands:
-      - echo "Proceso de pruebas finalizado."
+      - |
+        if [ "$CODEBUILD_BUILD_SUCCEEDING" != "1" ]; then
+          echo "Build fallido. No se publica imagen."
+          exit 1
+        fi
+      - echo "Publicando imagen en ECR..."
+      - docker push "$REPOSITORY_URI:$IMAGE_TAG"
+      - printf '{"ImageURI":"%s"}' "$REPOSITORY_URI:$IMAGE_TAG" > imageDetail.json
 
 reports:
   pytest-results:
@@ -31,8 +51,5 @@ reports:
 
 artifacts:
   files:
-    - application.py
-    - requirements.txt
-    - 'app/**/*'
-    - '.ebextensions/**/*'
-  discard-paths: no
+    - imageDetail.json
+  discard-paths: yes
