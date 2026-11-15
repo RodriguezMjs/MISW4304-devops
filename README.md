@@ -90,22 +90,41 @@ Healthy en `blacklist-blue`, la respuesta del endpoint de salud y la ejecución
 de la colección de Postman contra la URL del ALB. El health check no requiere
 autenticación; las operaciones de lista negra requieren un JWT válido.
 
-### Estado de la integración con CI/CD
+### Pipeline de CI/CD
 
-El servicio está configurado con el controlador `CODE_DEPLOY` y dispone de los
-grupos de destino `blacklist-blue` y `blacklist-green` para despliegues blue/green.
-El listener productivo HTTP:80 dirige inicialmente el tráfico al grupo azul;
-no hay un listener de prueba configurado.
+Cada commit en `main` dispara `misw4304-ci-pipeline` (CodePipeline V2, región
+`us-east-2`) por medio de la conexión de GitHub `misw4304-github-rodriguezmjs`.
 
-Al 12 de noviembre de 2026, el despliegue manual y la validación funcional están
-completados. La aplicación y el grupo de despliegue de CodeDeploy, la construcción
-y publicación automatizadas de imágenes y su conexión en CodePipeline están
-pendientes de configuración. Los escenarios de CI fallido, CI/CD exitosos y CI
-exitoso con CD fallido aún no se han validado en este ambiente.
+| Etapa | Proveedor | Resultado |
+|---|---|---|
+| Source | GitHub (CodeConnections), rama `main` | `SourceArtifact` |
+| Build | CodeBuild `blacklist-api-build` (`buildspec.yml`) | Pruebas, imagen en ECR con la etiqueta del commit y `BuildArtifact` |
+| Deploy | CodeDeploy, Amazon ECS (Blue/Green) | Nueva revisión de `blacklist-task` desplegada en `blacklist-service` |
 
-La imagen inicial usa una etiqueta manual basada en su identificador de imagen.
-La publicación automatizada debe utilizar etiquetas únicas asociadas al commit
-para mantener la trazabilidad de las versiones.
+Si una prueba falla, CodeBuild detiene la ejecución, no publica la imagen y la
+etapa Deploy no se ejecuta.
+
+#### Archivos de despliegue
+
+| Archivo | Responsable | Uso |
+|---|---|---|
+| `buildspec.yml` | CodeBuild | Ejecuta pruebas, construye y publica la imagen y genera `imageDetail.json` con la URI de la imagen |
+| `taskdef.json` | CodePipeline | Plantilla de `blacklist-task`; `<IMAGE1_NAME>` se reemplaza con la URI de `imageDetail.json` |
+| `appspec.yaml` | CodeDeploy | Servicio, contenedor `blacklist-api` y puerto `8000` que recibe el tráfico; `<TASK_DEFINITION>` se reemplaza con la revisión registrada |
+
+#### CodeDeploy
+
+| Recurso | Valor |
+|---|---|
+| Aplicación | `blacklist-codedeploy-app` (plataforma ECS) |
+| Grupo de despliegue | `blacklist-dg` |
+| Rol de servicio | `misw4304-codedeploy-ecs-role` (`AWSCodeDeployRoleForECS`) |
+| Configuración | `CodeDeployDefault.ECSAllAtOnce` |
+| Tráfico | Listener HTTP `80` de `blacklist-alb`, alternando entre `blacklist-blue` y `blacklist-green` |
+| Rollback | Automático ante `DEPLOYMENT_FAILURE` |
+
+El rol `misw4304-codepipeline-ci-role` tiene permisos para crear despliegues en
+CodeDeploy, registrar definiciones de tarea y pasar `ecsTaskExecutionRole` a ECS.
 
 ## Endpoints
 
