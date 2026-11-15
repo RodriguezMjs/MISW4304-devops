@@ -1,0 +1,55 @@
+{
+  "family": "blacklist-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::955501536413:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "blacklist-api",
+      "image": "<IMAGE1_NAME>",
+      "essential": true,
+      "portMappings": [
+        {
+          "name": "http",
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp",
+          "appProtocol": "http"
+        }
+      ],
+      "environment": [
+        {
+          "name": "PROXY_COUNT",
+          "value": "1"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:955501536413:secret:blacklist/entrega3/database-url-oyIDnV"
+        },
+        {
+          "name": "JWT_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:955501536413:secret:blacklist/entrega3/jwt-secret-LMmfZ8"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/blacklist-task",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "cpu": 0
+    }
+  ]
+}
