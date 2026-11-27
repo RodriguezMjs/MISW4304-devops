@@ -29,6 +29,14 @@
         {
           "name": "PROXY_COUNT",
           "value": "1"
+        },
+        {
+          "name": "NEW_RELIC_APP_NAME",
+          "value": "blacklist-api-fargate"
+        },
+        {
+          "name": "NEW_RELIC_LOG",
+          "value": "stderr"
         }
       ],
       "secrets": [
@@ -39,6 +47,10 @@
         {
           "name": "JWT_SECRET_KEY",
           "valueFrom": "arn:aws:secretsmanager:us-east-2:955501536413:secret:blacklist/entrega3/jwt-secret-LMmfZ8"
+        },
+        {
+          "name": "NEW_RELIC_LICENSE_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:955501536413:secret:blacklist/newrelic/fargate-KXEwWu"
         }
       ],
       "logConfiguration": {
